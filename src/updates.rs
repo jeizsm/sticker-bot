@@ -201,10 +201,11 @@ fn publish(bot: &RcBot, state: StateMachine, user_id: i64, chat_id: i64, user_na
         emojis, file
     } => {
         let text = format!("{}_by_smm_test_bot", user_name);
+        let url = format!("https://t.me/addstickers/{}", text);
         let future = bot.add_sticker_to_set(user_id, text, emojis)
             .file(("test.png", Cursor::new(file)))
             .send()
-            .and_then(move |(bot, a)| bot.message(chat_id, a.to_string()).send())
+            .and_then(move |(bot, _)| bot.message(chat_id, url).send())
             .map(nullify);
         Either::B(Either::A(future))
     },
@@ -214,10 +215,11 @@ fn publish(bot: &RcBot, state: StateMachine, user_id: i64, chat_id: i64, user_na
         file,
     } => {
         let text = format!("{}_by_smm_test_bot", user_name);
+        let url = format!("https://t.me/addstickers/{}", text);
         let future = bot.create_new_sticker_set(user_id, text, title, emojis)
             .file(("test.png", Cursor::new(file)))
             .send()
-            .and_then(move |(bot, a)| bot.message(chat_id, a.to_string()).send())
+            .and_then(move |(bot, _)| bot.message(chat_id, url).send())
             .map(nullify);
         Either::B(Either::B(future))
     },
