@@ -9,15 +9,15 @@ extern crate magick_rust;
 #[macro_use]
 extern crate lazy_static;
 
-use hyper::Client;
-use telebot::RcBot;
 use futures::{Future, Stream};
-use tokio_core::reactor::Core;
-use magick_rust::magick_wand_genesis;
+use hyper::Client;
 use hyper_rustls::HttpsConnector;
+use magick_rust::magick_wand_genesis;
+use telebot::RcBot;
+use tokio_core::reactor::Core;
 
-mod updates;
 mod types;
+mod updates;
 
 fn main() {
     magick_wand_genesis();

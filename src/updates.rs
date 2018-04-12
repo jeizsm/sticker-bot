@@ -1,24 +1,23 @@
-use std::io::Cursor;
-use std::env;
 use std::collections::HashMap;
+use std::env;
 use std::sync::Mutex;
 
-use futures::future::{ok, Either, Future};
+use failure::{err_msg, Error, Fail};
 use futures::Stream;
+use futures::future::{ok, Either, Future};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
-use telebot::RcBot;
-use telebot::objects::{File, Message, Update};
-use telebot::functions::{FunctionCreateNewStickerSet, FunctionGetFile, FunctionMessage, FunctionAddStickerToSet};
 use magick_rust::MagickWand;
-use failure::{err_msg, Error, Fail};
-
-use types::{StateMachine, ErrorKind};
+use telebot::RcBot;
+use telebot::functions::{FunctionGetFile, FunctionMessage};
+use telebot::objects::{File, Message, Update};
+use types::{nullify, ErrorKind, Event, State};
 
 lazy_static! {
-    static ref HASHMAP: Mutex<HashMap<i64, StateMachine>> = { Mutex::new(HashMap::new()) };
+    static ref HASHMAP: Mutex<HashMap<i64, State>> = { Mutex::new(HashMap::new()) };
     static ref USER_ID: i64 = { env::var("USER_ID").unwrap().parse().unwrap() };
-    pub static ref TELEGRAM_TOKEN: String = { env::var("TELEGRAM_TOKEN").unwrap() };
+    pub(super) static ref TELEGRAM_TOKEN: String = { env::var("TELEGRAM_TOKEN").unwrap() };
+    static ref BOT_NAME: String = { env::var("BOT_NAME").unwrap() };
 }
 
 pub(super) fn process(
@@ -55,7 +54,7 @@ fn message_process(
         Message {
             text: Some(text), ..
         } => {
-            let future = text_message(bot, text, user_id, chat_id, user_name);
+            let future = text_message(bot, text, user_id, chat_id, &user_name);
             Either::B(Either::A(future))
         }
         Message {
@@ -64,7 +63,7 @@ fn message_process(
         } => {
             let photo = photos.last().unwrap();
             let id = photo.file_id.clone();
-            let future = bot.get_file(id).send().and_then(send_message).map(nullify);
+            let future = bot.get_file(id).send().and_then(send_message);
             Either::B(Either::B(future))
         }
 
@@ -73,7 +72,7 @@ fn message_process(
             ..
         } => {
             let id = document.file_id.clone();
-            let future = bot.get_file(id).send().and_then(send_message).map(nullify);
+            let future = bot.get_file(id).send().and_then(send_message);
             Either::B(Either::B(future))
         }
 
@@ -82,18 +81,19 @@ fn message_process(
             ..
         } => {
             let id = sticker.file_id.clone();
-            let future = bot.get_file(id).send().and_then(send_message).map(nullify);
+            let future = bot.get_file(id).send().and_then(send_message);
             Either::B(Either::B(future))
         }
         _ => Either::A(ok(())),
     }
 }
+
 fn send_message(
     (bot, file): (RcBot, File),
     user_id: i64,
     chat_id: i64,
     client: &Client<HttpsConnector>,
-) -> impl Future<Item = (RcBot, Message), Error = Error> {
+) -> impl Future<Item = (), Error = Error> {
     let url = format!(
         "https://api.telegram.org/file/bot{}/{}",
         *TELEGRAM_TOKEN,
@@ -110,25 +110,12 @@ fn send_message(
             wand.write_image_blob("png").map_err(err_msg)
         })
         .and_then(move |image| {
-            let mut hashmap = HASHMAP.lock().unwrap();
-            let entry = hashmap.remove(&user_id);
-            match entry {
-                Some(entry) => match entry {
-                    StateMachine::Start => {
-                        let new_entry = StateMachine::First { file: image };
-                        let string = new_entry.to_string();
-                        hashmap.insert(user_id, new_entry);
-                        bot.message(chat_id, string).send()
-                    }
-                    _ => bot.message(chat_id, "cannot image now".to_string()).send(),
-                },
-                _ => bot.message(chat_id, "cannot image now".to_string()).send(),
-            }
+            let state = HASHMAP.lock().unwrap().remove(&user_id).unwrap();
+            let state = state.next(Event::AddSticker { file: image });
+            let future = state.run(&bot, chat_id);
+            HASHMAP.lock().unwrap().insert(user_id, state);
+            future
         })
-}
-
-fn nullify((_, _): (RcBot, Message)) {
-    ()
 }
 
 fn text_message(
@@ -136,98 +123,55 @@ fn text_message(
     text: String,
     user_id: i64,
     chat_id: i64,
-    user_name: String,
+    user_name: &str,
 ) -> impl Future<Item = (), Error = Error> {
-    if text.starts_with("/new_pack") {
-        let step = StateMachine::Start;
-        let future = bot.message(chat_id, step.to_string()).send().map(nullify);
-        HASHMAP.lock().unwrap().insert(user_id, step);
-        Either::A(future)
-    } else if text.starts_with("/add_to_pack") {
-        let step = StateMachine::Start;
-        let future = bot.message(chat_id, step.to_string()).send().map(nullify);
-        HASHMAP.lock().unwrap().insert(user_id, step);
-        Either::A(future)
+    if text.starts_with("/new_pack") || text.starts_with("/add_to_pack") {
+        let state = State::new();
+        let future = state.run(bot, chat_id);
+        HASHMAP.lock().unwrap().insert(user_id, state);
+        Either::A(Either::A(future))
     } else if text.starts_with("/publish") {
         let mut hashmap = HASHMAP.lock().unwrap();
-        let entry = hashmap.remove(&user_id);
-        match entry {
-            Some(entry) => Either::B(publish(bot, entry, user_id, chat_id, user_name)),
+        let state = hashmap.remove(&user_id);
+        match state {
+            Some(state @ State::Emojis { .. }) | Some(state @ State::Title { .. }) => {
+                let name = format!("{}_by_{}", user_name, *BOT_NAME);
+                let state = state.next(Event::AddName { name, user_id });
+                Either::A(Either::B(state.publish(bot, chat_id)))
+            }
+            Some(state) => {
+                hashmap.insert(user_id, state);
+                let future = bot.message(chat_id, "cannot publish yet".to_string())
+                    .send()
+                    .map(nullify);
+                Either::B(future)
+            }
             _ => {
                 let future = bot.message(chat_id, "cannot publish yet".to_string())
                     .send()
                     .map(nullify);
-                Either::A(future)
+                Either::B(future)
             }
         }
     } else {
         let mut hashmap = HASHMAP.lock().unwrap();
-        let entry = hashmap.remove(&user_id);
-        match entry {
-            Some(entry) => {
-                let new_entry = get_new_entry(entry, text);
-                let string = new_entry.to_string();
-                hashmap.insert(user_id, new_entry);
-                let future = bot.message(chat_id, string).send().map(nullify);
-                Either::A(future)
+        let state = hashmap.remove(&user_id);
+        match state {
+            Some(state) => {
+                let event = match state {
+                    State::Sticker { .. } => Event::AddEmojis { emojis: text },
+                    State::Emojis { .. } => Event::AddTitle { title: text },
+                    _ => Event::DoNothing,
+                };
+                let state = state.next(event);
+                let future = state.run(bot, chat_id);
+                hashmap.insert(user_id, state);
+                Either::A(Either::A(future))
             }
             None => {
                 let future = bot.message(chat_id, text).send().map(nullify);
-                Either::A(future)
+                Either::B(future)
             }
         }
-    }
-}
-
-fn get_new_entry(entry: StateMachine, text: String) -> StateMachine {
-    match entry {
-        StateMachine::First { file } => StateMachine::Second {
-            file,
-            emojis: text,
-        },
-        StateMachine::Second { file, emojis } => StateMachine::End {
-            file: file,
-            emojis: emojis,
-            title: text,
-        },
-        _ => unreachable!(),
-    }
-}
-
-fn publish(bot: &RcBot, state: StateMachine, user_id: i64, chat_id: i64, user_name: String) -> impl Future<Item = (), Error = Error> {
-    match state {
-
-    StateMachine::Second {
-        emojis, file
-    } => {
-        let text = format!("{}_by_smm_test_bot", user_name);
-        let url = format!("https://t.me/addstickers/{}", text);
-        let future = bot.add_sticker_to_set(user_id, text, emojis)
-            .file(("test.png", Cursor::new(file)))
-            .send()
-            .and_then(move |(bot, _)| bot.message(chat_id, url).send())
-            .map(nullify);
-        Either::B(Either::A(future))
-    },
-    StateMachine::End {
-        title,
-        emojis,
-        file,
-    } => {
-        let text = format!("{}_by_smm_test_bot", user_name);
-        let url = format!("https://t.me/addstickers/{}", text);
-        let future = bot.create_new_sticker_set(user_id, text, title, emojis)
-            .file(("test.png", Cursor::new(file)))
-            .send()
-            .and_then(move |(bot, _)| bot.message(chat_id, url).send())
-            .map(nullify);
-        Either::B(Either::B(future))
-    },
-    _ => {
-        let future = bot.message(chat_id, "cannot publish yet".to_string())
-            .send()
-            .map(nullify);
-        Either::A(future)
-    }
     }
 }
