@@ -25,9 +25,7 @@ fn main() {
     let handle = core.handle();
     let bot = RcBot::new(handle.clone(), &updates::TELEGRAM_TOKEN).update_interval(200);
 
-    let client = Client::configure()
-        .connector(HttpsConnector::new(4, &handle))
-        .build(&handle);
+    let client = Client::configure().connector(HttpsConnector::new(4, &handle)).build(&handle);
 
     let stream = bot.get_stream().for_each(|(bot, msg)| {
         println!("Received");

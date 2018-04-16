@@ -3,9 +3,9 @@ use std::io::Cursor;
 
 use failure::Error;
 use futures::future::{Either, Future};
-use telebot::RcBot;
 use telebot::functions::{FunctionAddStickerToSet, FunctionCreateNewStickerSet, FunctionMessage};
 use telebot::objects::Message;
+use telebot::RcBot;
 
 #[derive(Debug)]
 pub(crate) enum State {
@@ -55,15 +55,8 @@ impl State {
         match (self, event) {
             (State::Start, Event::AddName { name }) => State::Name { name },
             (State::Name { name }, Event::AddSticker { file }) => State::Sticker { name, file },
-            (State::Sticker { name, file }, Event::AddEmojis { emojis }) => {
-                State::Emojis { name, file, emojis }
-            }
-            (State::Emojis { file, emojis, name }, Event::AddTitle { title }) => State::Title {
-                file,
-                emojis,
-                title,
-                name,
-            },
+            (State::Sticker { name, file }, Event::AddEmojis { emojis }) => State::Emojis { name, file, emojis },
+            (State::Emojis { file, emojis, name }, Event::AddTitle { title }) => State::Title { file, emojis, title, name },
             (State::Emojis { file, emojis, name }, Event::AddUserId { user_id }) => State::End {
                 file,
                 emojis,
@@ -71,15 +64,7 @@ impl State {
                 user_id,
                 title: None,
             },
-            (
-                State::Title {
-                    file,
-                    emojis,
-                    title,
-                    name,
-                },
-                Event::AddUserId { user_id },
-            ) => State::End {
+            (State::Title { file, emojis, title, name }, Event::AddUserId { user_id }) => State::End {
                 file,
                 emojis,
                 name,
@@ -92,22 +77,14 @@ impl State {
 
     pub(crate) fn run(&self, bot: &RcBot, chat_id: i64) -> impl Future<Item = (), Error = Error> {
         match *self {
-            State::Start
-            | State::Name { .. }
-            | State::Sticker { .. }
-            | State::Emojis { .. }
-            | State::Title { .. } => bot.message(chat_id, self.to_string()).send().map(nullify),
-            State::End { .. } => bot.message(chat_id, "something went wrong".to_string())
-                .send()
-                .map(nullify),
+            State::Start | State::Name { .. } | State::Sticker { .. } | State::Emojis { .. } | State::Title { .. } => {
+                bot.message(chat_id, self.to_string()).send().map(nullify)
+            }
+            State::End { .. } => bot.message(chat_id, "something went wrong".to_string()).send().map(nullify),
         }
     }
 
-    pub(crate) fn publish(
-        self,
-        bot: &RcBot,
-        chat_id: i64,
-    ) -> impl Future<Item = (), Error = Error> {
+    pub(crate) fn publish(self, bot: &RcBot, chat_id: i64) -> impl Future<Item = (), Error = Error> {
         match self {
             State::End {
                 file,
@@ -136,9 +113,7 @@ impl State {
                 }
             },
             _ => {
-                let future = bot.message(chat_id, "cannot publish yet".to_string())
-                    .send()
-                    .map(nullify);
+                let future = bot.message(chat_id, "cannot publish yet".to_string()).send().map(nullify);
                 Either::B(future)
             }
         }

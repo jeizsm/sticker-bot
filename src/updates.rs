@@ -3,14 +3,14 @@ use std::env;
 use std::sync::Mutex;
 
 use failure::{err_msg, Error, Fail};
-use futures::Stream;
 use futures::future::{ok, Either, Future};
+use futures::Stream;
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use magick_rust::MagickWand;
-use telebot::RcBot;
 use telebot::functions::{FunctionDeleteStickerFromSet, FunctionGetFile, FunctionMessage};
 use telebot::objects::{File, Message, Update};
+use telebot::RcBot;
 use types::{nullify, ErrorKind, Event, State};
 
 lazy_static! {
@@ -20,11 +20,7 @@ lazy_static! {
     static ref BOT_NAME: String = { env::var("BOT_NAME").unwrap() };
 }
 
-pub(super) fn process(
-    bot: &RcBot,
-    client: Client<HttpsConnector>,
-    update: Update,
-) -> impl Future<Item = (), Error = Error> {
+pub(super) fn process(bot: &RcBot, client: Client<HttpsConnector>, update: Update) -> impl Future<Item = (), Error = Error> {
     if let Some(message) = update.message {
         Either::A(message_process(bot, client, message))
     } else {
@@ -32,11 +28,7 @@ pub(super) fn process(
     }
 }
 
-fn message_process(
-    bot: &RcBot,
-    client: Client<HttpsConnector>,
-    message: Message,
-) -> impl Future<Item = (), Error = Error> {
+fn message_process(bot: &RcBot, client: Client<HttpsConnector>, message: Message) -> impl Future<Item = (), Error = Error> {
     let user_id = match message.from.as_ref() {
         Some(user) => {
             if user.id == *USER_ID {
@@ -48,19 +40,13 @@ fn message_process(
         None => return Either::A(Either::A(ok(()))),
     };
     let chat_id = message.chat.id;
-    let send_message =
-        move |(bot, file): (RcBot, File)| send_message((bot, file), user_id, chat_id, &client);
+    let send_message = move |(bot, file): (RcBot, File)| send_message((bot, file), user_id, chat_id, &client);
     match message {
-        Message {
-            text: Some(text), ..
-        } => {
+        Message { text: Some(text), .. } => {
             let future = text_message(bot, text, user_id, chat_id);
             Either::B(Either::A(future))
         }
-        Message {
-            photo: Some(photos),
-            ..
-        } => {
+        Message { photo: Some(photos), .. } => {
             let photo = photos.last().unwrap();
             let id = photo.file_id.clone();
             let future = bot.get_file(id).send().and_then(send_message);
@@ -68,8 +54,7 @@ fn message_process(
         }
 
         Message {
-            document: Some(document),
-            ..
+            document: Some(document), ..
         } => {
             let id = document.file_id;
             let future = bot.get_file(id).send().and_then(send_message);
@@ -77,19 +62,14 @@ fn message_process(
         }
 
         Message {
-            sticker: Some(sticker),
-            ..
+            sticker: Some(sticker), ..
         } => {
             let id = sticker.file_id;
             let set_from_bot = sticker.set_name.map_or(false, |a| a.ends_with(&*BOT_NAME));
             if set_from_bot {
                 let future = bot.delete_sticker_from_set(id)
                     .send()
-                    .and_then(move |(bot, _)| {
-                        bot.message(chat_id, "sticker deleted".to_string())
-                            .send()
-                            .map(nullify)
-                    });
+                    .and_then(move |(bot, _)| bot.message(chat_id, "sticker deleted".to_string()).send().map(nullify));
                 Either::A(Either::B(future))
             } else {
                 let future = bot.get_file(id).send().and_then(send_message);
@@ -106,11 +86,7 @@ fn send_message(
     chat_id: i64,
     client: &Client<HttpsConnector>,
 ) -> impl Future<Item = (), Error = Error> {
-    let url = format!(
-        "https://api.telegram.org/file/bot{}/{}",
-        *TELEGRAM_TOKEN,
-        file.file_path.unwrap()
-    );
+    let url = format!("https://api.telegram.org/file/bot{}/{}", *TELEGRAM_TOKEN, file.file_path.unwrap());
     client
         .get(url.parse().unwrap())
         .and_then(|res| res.body().concat2().from_err())
@@ -130,12 +106,7 @@ fn send_message(
         })
 }
 
-fn text_message(
-    bot: &RcBot,
-    text: String,
-    user_id: i64,
-    chat_id: i64,
-) -> impl Future<Item = (), Error = Error> {
+fn text_message(bot: &RcBot, text: String, user_id: i64, chat_id: i64) -> impl Future<Item = (), Error = Error> {
     if text.starts_with("/new_pack") || text.starts_with("/add_to_pack") {
         let state = State::new();
         let future = state.run(bot, chat_id);
@@ -151,15 +122,11 @@ fn text_message(
             }
             Some(state) => {
                 hashmap.insert(user_id, state);
-                let future = bot.message(chat_id, "cannot publish yet".to_string())
-                    .send()
-                    .map(nullify);
+                let future = bot.message(chat_id, "cannot publish yet".to_string()).send().map(nullify);
                 Either::B(future)
             }
             _ => {
-                let future = bot.message(chat_id, "cannot publish yet".to_string())
-                    .send()
-                    .map(nullify);
+                let future = bot.message(chat_id, "cannot publish yet".to_string()).send().map(nullify);
                 Either::B(future)
             }
         }
