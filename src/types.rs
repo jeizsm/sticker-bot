@@ -10,14 +10,20 @@ use telebot::objects::Message;
 #[derive(Debug)]
 pub(crate) enum State {
     Start,
+    Name {
+        name: String,
+    },
     Sticker {
+        name: String,
         file: Vec<u8>,
     },
     Emojis {
+        name: String,
         emojis: String,
         file: Vec<u8>,
     },
     Title {
+        name: String,
         title: String,
         emojis: String,
         file: Vec<u8>,
@@ -32,10 +38,11 @@ pub(crate) enum State {
 }
 
 pub(crate) enum Event {
+    AddName { name: String },
     AddSticker { file: Vec<u8> },
     AddEmojis { emojis: String },
     AddTitle { title: String },
-    AddName { name: String, user_id: i64 },
+    AddUserId { user_id: i64 },
     DoNothing,
 }
 
@@ -46,16 +53,18 @@ impl State {
 
     pub(crate) fn next(self, event: Event) -> State {
         match (self, event) {
-            (State::Start, Event::AddSticker { file }) => State::Sticker { file },
-            (State::Sticker { file }, Event::AddEmojis { emojis }) => {
-                State::Emojis { file, emojis }
+            (State::Start, Event::AddName { name }) => State::Name { name },
+            (State::Name { name }, Event::AddSticker { file }) => State::Sticker { name, file },
+            (State::Sticker { name, file }, Event::AddEmojis { emojis }) => {
+                State::Emojis { name, file, emojis }
             }
-            (State::Emojis { file, emojis }, Event::AddTitle { title }) => State::Title {
+            (State::Emojis { file, emojis, name }, Event::AddTitle { title }) => State::Title {
                 file,
                 emojis,
                 title,
+                name,
             },
-            (State::Emojis { file, emojis }, Event::AddName { name, user_id }) => State::End {
+            (State::Emojis { file, emojis, name }, Event::AddUserId { user_id }) => State::End {
                 file,
                 emojis,
                 name,
@@ -67,8 +76,9 @@ impl State {
                     file,
                     emojis,
                     title,
+                    name,
                 },
-                Event::AddName { name, user_id },
+                Event::AddUserId { user_id },
             ) => State::End {
                 file,
                 emojis,
@@ -82,11 +92,12 @@ impl State {
 
     pub(crate) fn run(&self, bot: &RcBot, chat_id: i64) -> impl Future<Item = (), Error = Error> {
         match *self {
-            State::Start => bot.message(chat_id, self.to_string()).send().map(nullify),
-            State::Sticker { .. } => bot.message(chat_id, self.to_string()).send().map(nullify),
-            State::Emojis { .. } => bot.message(chat_id, self.to_string()).send().map(nullify),
-            State::Title { .. } => bot.message(chat_id, self.to_string()).send().map(nullify),
-            _ => bot.message(chat_id, "something went wrong".to_string())
+            State::Start
+            | State::Name { .. }
+            | State::Sticker { .. }
+            | State::Emojis { .. }
+            | State::Title { .. } => bot.message(chat_id, self.to_string()).send().map(nullify),
+            State::End { .. } => bot.message(chat_id, "something went wrong".to_string())
                 .send()
                 .map(nullify),
         }
@@ -137,7 +148,8 @@ impl State {
 impl Display for State {
     fn fmt(&self, f: &mut Formatter) -> DisplayResult {
         match self {
-            State::Start { .. } => write!(f, "Send photo: "),
+            State::Start => write!(f, "Send name: "),
+            State::Name { .. } => write!(f, "Send photo or sticker: "),
             State::Sticker { .. } => write!(f, "Send emoji: "),
             State::Emojis { .. } => write!(f, "Send title or /publish: "),
             State::Title { .. } => write!(f, "Send /publish"),

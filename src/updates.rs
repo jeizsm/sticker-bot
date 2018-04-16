@@ -37,10 +37,10 @@ fn message_process(
     client: Client<HttpsConnector>,
     message: Message,
 ) -> impl Future<Item = (), Error = Error> {
-    let (user_id, user_name) = match message.from.as_ref() {
+    let user_id = match message.from.as_ref() {
         Some(user) => {
             if user.id == *USER_ID {
-                (user.id, user.username.clone().unwrap())
+                user.id
             } else {
                 return Either::A(Either::A(ok(())));
             }
@@ -54,7 +54,7 @@ fn message_process(
         Message {
             text: Some(text), ..
         } => {
-            let future = text_message(bot, text, user_id, chat_id, &user_name);
+            let future = text_message(bot, text, user_id, chat_id);
             Either::B(Either::A(future))
         }
         Message {
@@ -71,7 +71,7 @@ fn message_process(
             document: Some(document),
             ..
         } => {
-            let id = document.file_id.clone();
+            let id = document.file_id;
             let future = bot.get_file(id).send().and_then(send_message);
             Either::B(Either::B(future))
         }
@@ -80,11 +80,10 @@ fn message_process(
             sticker: Some(sticker),
             ..
         } => {
-            let set_name = format!("{}_by_{}", user_name, *BOT_NAME);
-            let id = sticker.file_id.clone();
-            let sticker_set_name = sticker.set_name.unwrap();
-            if set_name == sticker_set_name {
-                let future = bot.delete_sticker_from_set(sticker.file_id)
+            let id = sticker.file_id;
+            let set_from_bot = sticker.set_name.map_or(false, |a| a.ends_with(&*BOT_NAME));
+            if set_from_bot {
+                let future = bot.delete_sticker_from_set(id)
                     .send()
                     .and_then(move |(bot, _)| {
                         bot.message(chat_id, "sticker deleted".to_string())
@@ -136,7 +135,6 @@ fn text_message(
     text: String,
     user_id: i64,
     chat_id: i64,
-    user_name: &str,
 ) -> impl Future<Item = (), Error = Error> {
     if text.starts_with("/new_pack") || text.starts_with("/add_to_pack") {
         let state = State::new();
@@ -148,8 +146,7 @@ fn text_message(
         let state = hashmap.remove(&user_id);
         match state {
             Some(state @ State::Emojis { .. }) | Some(state @ State::Title { .. }) => {
-                let name = format!("{}_by_{}", user_name, *BOT_NAME);
-                let state = state.next(Event::AddName { name, user_id });
+                let state = state.next(Event::AddUserId { user_id });
                 Either::A(Either::B(state.publish(bot, chat_id)))
             }
             Some(state) => {
@@ -172,6 +169,9 @@ fn text_message(
         match state {
             Some(state) => {
                 let event = match state {
+                    State::Start => Event::AddName {
+                        name: format!("{}_by_{}", text, *BOT_NAME),
+                    },
                     State::Sticker { .. } => Event::AddEmojis { emojis: text },
                     State::Emojis { .. } => Event::AddTitle { title: text },
                     _ => Event::DoNothing,
