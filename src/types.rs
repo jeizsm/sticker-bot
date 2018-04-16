@@ -39,14 +39,6 @@ pub(crate) enum Event {
     DoNothing,
 }
 
-// pub(crate) struct StateMachine { state: State }
-
-// impl StateMachine {
-//     fn new(user_id: i64) -> StateMachine {
-//         StateMachine { state: State::Start { user_id } }
-//     }
-// }
-
 impl State {
     pub(crate) fn new() -> State {
         State::Start

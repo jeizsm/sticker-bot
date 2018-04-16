@@ -9,7 +9,7 @@ use hyper::Client;
 use hyper_rustls::HttpsConnector;
 use magick_rust::MagickWand;
 use telebot::RcBot;
-use telebot::functions::{FunctionGetFile, FunctionMessage};
+use telebot::functions::{FunctionDeleteStickerFromSet, FunctionGetFile, FunctionMessage};
 use telebot::objects::{File, Message, Update};
 use types::{nullify, ErrorKind, Event, State};
 
@@ -42,10 +42,10 @@ fn message_process(
             if user.id == *USER_ID {
                 (user.id, user.username.clone().unwrap())
             } else {
-                return Either::A(ok(()));
+                return Either::A(Either::A(ok(())));
             }
         }
-        None => return Either::A(ok(())),
+        None => return Either::A(Either::A(ok(()))),
     };
     let chat_id = message.chat.id;
     let send_message =
@@ -80,11 +80,24 @@ fn message_process(
             sticker: Some(sticker),
             ..
         } => {
+            let set_name = format!("{}_by_{}", user_name, *BOT_NAME);
             let id = sticker.file_id.clone();
-            let future = bot.get_file(id).send().and_then(send_message);
-            Either::B(Either::B(future))
+            let sticker_set_name = sticker.set_name.unwrap();
+            if set_name == sticker_set_name {
+                let future = bot.delete_sticker_from_set(sticker.file_id)
+                    .send()
+                    .and_then(move |(bot, _)| {
+                        bot.message(chat_id, "sticker deleted".to_string())
+                            .send()
+                            .map(nullify)
+                    });
+                Either::A(Either::B(future))
+            } else {
+                let future = bot.get_file(id).send().and_then(send_message);
+                Either::B(Either::B(future))
+            }
         }
-        _ => Either::A(ok(())),
+        _ => Either::A(Either::A(ok(()))),
     }
 }
 
