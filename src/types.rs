@@ -6,6 +6,10 @@ use futures::future::{Either, Future};
 use telebot::functions::{FunctionAddStickerToSet, FunctionCreateNewStickerSet, FunctionMessage};
 use telebot::objects::Message;
 use telebot::RcBot;
+use hyper_rustls::HttpsConnector;
+use hyper::Client;
+
+pub(crate) type HttpsClient = Client<HttpsConnector>;
 
 #[derive(Debug)]
 pub(crate) enum State {
