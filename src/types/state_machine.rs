@@ -6,10 +6,6 @@ use futures::future::{Either, Future};
 use telebot::functions::{FunctionAddStickerToSet, FunctionCreateNewStickerSet, FunctionMessage};
 use telebot::objects::Message;
 use telebot::RcBot;
-use hyper_rustls::HttpsConnector;
-use hyper::Client;
-
-pub(crate) type HttpsClient = Client<HttpsConnector>;
 
 #[derive(Debug)]
 pub(crate) enum State {
@@ -135,13 +131,6 @@ impl Display for State {
             State::End { .. } => write!(f, "Send /publish"),
         }
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Fail)]
-pub(crate) enum ErrorKind {
-    // indicates some failure in Hyper, missing network connection, etc.
-    #[fail(display = "There was an error fetching the content")]
-    Hyper,
 }
 
 pub(crate) fn nullify((_, _): (RcBot, Message)) {
