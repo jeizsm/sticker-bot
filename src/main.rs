@@ -8,6 +8,9 @@ extern crate hyper_rustls;
 extern crate magick_rust;
 #[macro_use]
 extern crate lazy_static;
+extern crate sled;
+extern crate bincode;
+extern crate serde;
 
 use futures::{Future, Stream};
 use hyper::Client;
