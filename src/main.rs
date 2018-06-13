@@ -13,6 +13,7 @@ extern crate bincode;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate envy;
 
 use futures::{Future, Stream};
 use hyper::Client;
@@ -23,12 +24,13 @@ use tokio_core::reactor::Core;
 
 mod types;
 mod updates;
+mod helpers;
 
 fn main() {
     magick_wand_genesis();
     let mut core = Core::new().unwrap();
     let handle = core.handle();
-    let bot = RcBot::new(handle.clone(), &updates::TELEGRAM_TOKEN).update_interval(200);
+    let bot = RcBot::new(handle.clone(), &helpers::CONFIG.telegram_token).update_interval(200);
 
     let client = Client::configure().connector(HttpsConnector::new(4, &handle)).build(&handle);
 

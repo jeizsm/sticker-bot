@@ -18,3 +18,10 @@ pub(crate) enum ErrorKind {
     #[fail(display = "There was an error in Sled")]
     Sled,
 }
+
+#[derive(Deserialize)]
+pub(crate) struct Config {
+    pub telegram_token: String,
+    pub user_id: i64,
+    pub bot_name: String,
+}

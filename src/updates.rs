@@ -10,12 +10,10 @@ use telebot::functions::{FunctionDeleteStickerFromSet, FunctionGetFile, Function
 use telebot::objects::{File, Message, Update};
 use telebot::RcBot;
 use types::{nullify, ErrorKind, Event, HttpsClient, State};
+use helpers::CONFIG;
 
 lazy_static! {
     static ref HASHMAP: Mutex<HashMap<i64, State>> = { Mutex::new(HashMap::new()) };
-    static ref USER_ID: i64 = { env::var("USER_ID").unwrap().parse().unwrap() };
-    pub(super) static ref TELEGRAM_TOKEN: String = { env::var("TELEGRAM_TOKEN").unwrap() };
-    static ref BOT_NAME: String = { env::var("BOT_NAME").unwrap() };
 }
 
 pub(super) fn process(bot: &RcBot, client: HttpsClient, update: Update) -> impl Future<Item = (), Error = Error> {
@@ -29,7 +27,7 @@ pub(super) fn process(bot: &RcBot, client: HttpsClient, update: Update) -> impl 
 fn message_process(bot: &RcBot, client: HttpsClient, message: Message) -> impl Future<Item = (), Error = Error> {
     let user_id = match message.from.as_ref() {
         Some(user) => {
-            if user.id == *USER_ID {
+            if user.id == CONFIG.user_id {
                 user.id
             } else {
                 return Either::A(Either::A(ok(())));
@@ -66,7 +64,7 @@ fn message_process(bot: &RcBot, client: HttpsClient, message: Message) -> impl F
             sticker: Some(sticker), ..
         } => {
             let id = sticker.file_id;
-            let set_from_bot = sticker.set_name.map_or(false, |a| a.ends_with(&*BOT_NAME));
+            let set_from_bot = sticker.set_name.map_or(false, |a| a.ends_with(&CONFIG.bot_name));
             if set_from_bot {
                 let future = bot.delete_sticker_from_set(id)
                     .send()
@@ -82,7 +80,7 @@ fn message_process(bot: &RcBot, client: HttpsClient, message: Message) -> impl F
 }
 
 fn send_message((bot, file): (RcBot, File), user_id: i64, chat_id: i64, client: &HttpsClient) -> impl Future<Item = (), Error = Error> {
-    let url = format!("https://api.telegram.org/file/bot{}/{}", *TELEGRAM_TOKEN, file.file_path.unwrap());
+    let url = format!("https://api.telegram.org/file/bot{}/{}", CONFIG.telegram_token, file.file_path.unwrap());
     client
         .get(url.parse().unwrap())
         .and_then(|res| res.body().concat2().from_err())
@@ -133,7 +131,7 @@ fn text_message(bot: &RcBot, text: String, user_id: i64, chat_id: i64) -> impl F
             Some(state) => {
                 let event = match state {
                     State::Start => Event::AddName {
-                        name: format!("{}_by_{}", text, *BOT_NAME),
+                        name: format!("{}_by_{}", text, CONFIG.bot_name),
                     },
                     State::Sticker { .. } => Event::AddEmojis { emojis: text },
                     State::Emojis { .. } => Event::AddTitle { title: text },
