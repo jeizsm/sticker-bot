@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-use std::env;
-use std::sync::Mutex;
-
 use failure::{err_msg, Error, Fail};
 use futures::future::{ok, Either, Future};
 use futures::Stream;
@@ -10,11 +6,7 @@ use telebot::functions::{FunctionDeleteStickerFromSet, FunctionGetFile, Function
 use telebot::objects::{File, Message, Update};
 use telebot::RcBot;
 use types::{nullify, ErrorKind, Event, HttpsClient, State};
-use helpers::CONFIG;
-
-lazy_static! {
-    static ref HASHMAP: Mutex<HashMap<i64, State>> = { Mutex::new(HashMap::new()) };
-}
+use helpers::{CONFIG, STICKER_DB};
 
 pub(super) fn process(bot: &RcBot, client: HttpsClient, update: Update) -> impl Future<Item = (), Error = Error> {
     if let Some(message) = update.message {
@@ -92,10 +84,10 @@ fn send_message((bot, file): (RcBot, File), user_id: i64, chat_id: i64, client: 
             wand.write_image_blob("png").map_err(err_msg)
         })
         .and_then(move |image| {
-            let state = HASHMAP.lock().unwrap().remove(&user_id).unwrap();
+            let state = STICKER_DB.get(&user_id).unwrap().unwrap();
             let state = state.next(Event::AddSticker { file: image });
             let future = state.run(&bot, chat_id);
-            HASHMAP.lock().unwrap().insert(user_id, state);
+            STICKER_DB.set(&user_id, &state).unwrap();
             future
         })
 }
@@ -104,18 +96,17 @@ fn text_message(bot: &RcBot, text: String, user_id: i64, chat_id: i64) -> impl F
     if text.starts_with("/new_pack") || text.starts_with("/add_to_pack") {
         let state = State::new();
         let future = state.run(bot, chat_id);
-        HASHMAP.lock().unwrap().insert(user_id, state);
+        STICKER_DB.set(&user_id, &state).unwrap();
         Either::A(Either::A(future))
     } else if text.starts_with("/publish") {
-        let mut hashmap = HASHMAP.lock().unwrap();
-        let state = hashmap.remove(&user_id);
+        let state = STICKER_DB.get(&user_id).unwrap();
         match state {
             Some(state @ State::Emojis { .. }) | Some(state @ State::Title { .. }) => {
                 let state = state.next(Event::AddUserId { user_id });
                 Either::A(Either::B(state.publish(bot, chat_id)))
             }
             Some(state) => {
-                hashmap.insert(user_id, state);
+                STICKER_DB.set(&user_id, &state).unwrap();
                 let future = bot.message(chat_id, "cannot publish yet".to_string()).send().map(nullify);
                 Either::B(future)
             }
@@ -125,8 +116,7 @@ fn text_message(bot: &RcBot, text: String, user_id: i64, chat_id: i64) -> impl F
             }
         }
     } else {
-        let mut hashmap = HASHMAP.lock().unwrap();
-        let state = hashmap.remove(&user_id);
+        let state = STICKER_DB.get(&user_id).unwrap();
         match state {
             Some(state) => {
                 let event = match state {
@@ -139,7 +129,7 @@ fn text_message(bot: &RcBot, text: String, user_id: i64, chat_id: i64) -> impl F
                 };
                 let state = state.next(event);
                 let future = state.run(bot, chat_id);
-                hashmap.insert(user_id, state);
+                STICKER_DB.set(&user_id, &state).unwrap();
                 Either::A(Either::A(future))
             }
             None => {

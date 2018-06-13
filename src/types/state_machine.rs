@@ -7,7 +7,7 @@ use telebot::functions::{FunctionAddStickerToSet, FunctionCreateNewStickerSet, F
 use telebot::objects::Message;
 use telebot::RcBot;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum State {
     Start,
     Name {

@@ -3,6 +3,7 @@ use bincode::{serialize, deserialize};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sled::{Tree, DbResult};
+use super::MyOption;
 
 pub(crate) struct TypedDB<'a, K, V> {
     db: &'a Tree,
@@ -14,7 +15,7 @@ impl<'a, K, V> TypedDB<'a, K, V>
 where
     K: Serialize,
     V: Serialize + DeserializeOwned,
-    Option<V>: From<Option<Vec<u8>>>
+    MyOption<V>: From<Option<Vec<u8>>>
 {
     pub(crate) fn new(db: &'a Tree) -> Self {
         Self {
@@ -33,7 +34,7 @@ where
         let key = serialize(key).unwrap();
         let old = old.map(|value| serialize(value).unwrap());
         let new = new.map(|value| serialize(value).unwrap());
-        self.db.cas(key, old, new).map_err(|e| e.cast())
+        self.db.cas(key, old, new).map_err(|e| e.cast::<MyOption<V>>().cast())
     }
 
     pub(crate) fn set(&self, key: &K, value: &V) -> DbResult<(), ()> {

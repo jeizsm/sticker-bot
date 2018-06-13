@@ -12,7 +12,7 @@ failure = "0.1"
 hyper = "0.11"
 hyper-rustls = "0.12"
 lazy_static = "1.0"
-sled = "0.15"
+sled = { git = "https://github.com/jeizsm/sled.git" }
 bincode = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
