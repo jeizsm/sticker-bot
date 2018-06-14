@@ -4,8 +4,8 @@ use std::io::Cursor;
 use failure::Error;
 use futures::future::{Either, Future};
 use telebot::functions::{FunctionAddStickerToSet, FunctionCreateNewStickerSet, FunctionMessage};
-use telebot::objects::Message;
 use telebot::RcBot;
+use helpers::nullify;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum State {
@@ -131,8 +131,4 @@ impl Display for State {
             State::End { .. } => write!(f, "Send /publish"),
         }
     }
-}
-
-pub(crate) fn nullify((_, _): (RcBot, Message)) {
-    ()
 }

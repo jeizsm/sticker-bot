@@ -5,8 +5,8 @@ use magick_rust::MagickWand;
 use telebot::functions::{FunctionDeleteStickerFromSet, FunctionGetFile, FunctionMessage};
 use telebot::objects::{File, Message, Update};
 use telebot::RcBot;
-use types::{nullify, ErrorKind, Event, HttpsClient, State};
-use helpers::{CONFIG, STICKER_DB};
+use types::{ErrorKind, Event, HttpsClient, State};
+use helpers::{CONFIG, STICKER_DB, nullify};
 
 pub(super) fn process(bot: &RcBot, client: HttpsClient, update: Update) -> impl Future<Item = (), Error = Error> {
     if let Some(message) = update.message {
@@ -17,17 +17,17 @@ pub(super) fn process(bot: &RcBot, client: HttpsClient, update: Update) -> impl 
 }
 
 fn message_process(bot: &RcBot, client: HttpsClient, message: Message) -> impl Future<Item = (), Error = Error> {
+    let chat_id = message.chat.id;
     let user_id = match message.from.as_ref() {
         Some(user) => {
             if user.id == CONFIG.user_id {
                 user.id
             } else {
-                return Either::A(Either::A(ok(())));
+                return Either::A(Either::A(bot.message(chat_id, "sorry bot is not working for you".to_string()).send().map(nullify)));
             }
         }
-        None => return Either::A(Either::A(ok(()))),
+        None => return Either::A(Either::A(bot.message(chat_id, "cannot find user id".to_string()).send().map(nullify))),
     };
-    let chat_id = message.chat.id;
     let send_message = move |(bot, file): (RcBot, File)| send_message((bot, file), user_id, chat_id, &client);
     let get_file_and_send_message = |id: String| bot.get_file(id).send().and_then(send_message);
     match message {
@@ -48,7 +48,7 @@ fn message_process(bot: &RcBot, client: HttpsClient, message: Message) -> impl F
                 let future = get_file_and_send_message(document.file_id);
                 Either::B(Either::B(future))
             } else {
-                Either::A(Either::A(ok(())))
+                Either::A(Either::A(bot.message(chat_id, "it's not image".to_string()).send().map(nullify)))
             }
         }
 
@@ -67,7 +67,7 @@ fn message_process(bot: &RcBot, client: HttpsClient, message: Message) -> impl F
                 Either::B(Either::B(future))
             }
         }
-        _ => Either::A(Either::A(ok(()))),
+        _ => Either::A(Either::A(bot.message(chat_id, "something went wrong".to_string()).send().map(nullify))),
     }
 }
 
@@ -110,7 +110,7 @@ fn text_message(bot: &RcBot, text: String, user_id: i64, chat_id: i64) -> impl F
                 let future = bot.message(chat_id, "cannot publish yet".to_string()).send().map(nullify);
                 Either::B(future)
             }
-            _ => {
+            None => {
                 let future = bot.message(chat_id, "cannot publish yet".to_string()).send().map(nullify);
                 Either::B(future)
             }

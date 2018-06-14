@@ -5,7 +5,7 @@ use bincode::deserialize;
 use hyper_rustls::HttpsConnector;
 use hyper::Client;
 use serde::de::DeserializeOwned;
-pub(crate) use self::state_machine::{Event, State, nullify};
+pub(crate) use self::state_machine::{Event, State};
 pub(crate) use self::db::TypedDB;
 
 pub(crate) type HttpsClient = Client<HttpsConnector>;

@@ -5,6 +5,8 @@ use std::path::Path;
 use types::State;
 use types::TypedDB;
 use sled::Tree;
+use telebot::objects::Message;
+use telebot::RcBot;
 
 fn config() -> Config {
     match envy::from_env() {
@@ -24,4 +26,8 @@ lazy_static! {
     pub(crate) static ref CONFIG: Config = config();
     static ref TREE: Tree = Tree::start(sled_config("sticker.db")).unwrap();
     pub(crate) static ref STICKER_DB: StickerDB<'static> = StickerDB::new(&TREE);
+}
+
+pub(crate) fn nullify((_, _): (RcBot, Message)) {
+    ()
 }
