@@ -8,26 +8,30 @@ extern crate hyper_rustls;
 extern crate magick_rust;
 #[macro_use]
 extern crate lazy_static;
-extern crate sled;
 extern crate bincode;
 extern crate serde;
+extern crate sled;
 #[macro_use]
 extern crate serde_derive;
 extern crate envy;
+#[macro_use]
+extern crate log;
+extern crate byteorder;
+extern crate env_logger;
 
 use futures::{Future, Stream};
 use hyper::Client;
 use hyper_rustls::HttpsConnector;
-use magick_rust::magick_wand_genesis;
 use telebot::RcBot;
 use tokio_core::reactor::Core;
 
+mod helpers;
 mod types;
 mod updates;
-mod helpers;
 
 fn main() {
-    magick_wand_genesis();
+    magick_rust::magick_wand_genesis();
+    env_logger::init();
     let mut core = Core::new().unwrap();
     let handle = core.handle();
     let bot = RcBot::new(handle.clone(), &helpers::CONFIG.telegram_token).update_interval(200);
@@ -35,10 +39,10 @@ fn main() {
     let client = Client::configure().connector(HttpsConnector::new(4, &handle)).build(&handle);
 
     let stream = bot.get_stream().for_each(|(bot, msg)| {
-        println!("Received");
         let client = client.clone();
+        debug!("{:?}", msg);
         let future = updates::process(&bot, client, msg);
-        handle.spawn(future.map_err(|a| println!("{:?}", a)));
+        handle.spawn(future.map_err(|a| error!("{:?}", a)));
         Ok(())
     });
 
